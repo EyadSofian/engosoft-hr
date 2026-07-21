@@ -95,6 +95,15 @@ The dashboard never hard-codes column letters. On every refresh it:
 A workflow at [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) builds and deploys on every push to `main`.
 Enable it once: **Repo → Settings → Pages → Build and deployment → Source: GitHub Actions.**
 
+### Railway
+The repo is Railway-ready — a tiny zero-dependency static server ([`server.mjs`](server.mjs)) plus [`railway.json`](railway.json):
+
+1. **New Project → Deploy from GitHub repo** → pick `engosoft-hr`.
+2. Railway runs `npm run build`, then `node server.mjs` (serves `dist/` on Railway's `$PORT`).
+3. **Settings → Networking → Generate Domain.**
+
+> ⚠️ **Vite env vars are baked at _build_ time.** Add `VITE_SHEET_ID` (and optionally `VITE_GSHEET_API_KEY`) in **Railway → Variables _before_ deploying**, then redeploy so the build picks them up. The sheet ID also ships as a default in the code, so it works even with no variables set.
+
 ### Vercel / Netlify
 Import the repo — framework preset **Vite**, build `npm run build`, output `dist`. Done. `base: './'` makes the build path-agnostic.
 
