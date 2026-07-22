@@ -1,161 +1,270 @@
+import { useMemo } from 'react';
 import {
-  Activity, AlertTriangle, Briefcase, CheckCircle2, GitBranch, Layers, MapPin,
-  PauseCircle, Repeat, Target, TrendingUp, UserCheck, Users, Wallet,
+  AlertTriangle, ArrowRight, Briefcase, CalendarClock, FileWarning, Network,
+  Target, TimerReset, TrendingDown, Users,
 } from 'lucide-react';
-import type { Analytics } from '../lib/analytics';
-import { useI18n } from '../i18n/LangProvider';
-import { LOCATION, PRIORITY, SENIORITY, STATUS, VACANCY } from '../config/semantics';
-import { formatMoney, formatNumber, formatPercent } from '../lib/format';
-import { KpiCard } from '../components/KpiCard';
 import { ChartCard } from '../components/ChartCard';
-import { BarList, Donut, Funnel, StackedBarList, type Segment } from '../components/charts';
-import { withAlpha } from '../components/primitives';
+import { KpiCard } from '../components/KpiCard';
+import { BarList, Donut, StackedBarList } from '../components/charts';
+import { LoadingView } from '../components/StateViews';
+import { useDomain } from '../data/DataProvider';
+import { useI18n } from '../i18n/LangProvider';
+import {
+  employeeAnalytics, jobAnalytics, kpiAnalytics, recruitmentAnalytics,
+} from '../lib/analytics';
+import { formatDecimal, formatNumber, formatPercent } from '../lib/format';
+import { STATUS, deptColor } from '../config/semantics';
+import type { View } from '../nav';
 
-function StatPill({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: string; color: string }) {
-  return (
-    <div className="card flex items-center gap-3 p-4">
-      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl" style={{ backgroundColor: withAlpha(color, 0.12), color }}>
-        {icon}
-      </span>
-      <div className="min-w-0">
-        <div className="text-xl font-extrabold leading-none text-ink-900 tnum">{value}</div>
-        <div className="mt-1 truncate text-[12px] font-medium text-ink-500">{label}</div>
-      </div>
-    </div>
+/**
+ * The one screen a manager opens first: headline numbers from every domain, and
+ * a single list of what is actually waiting on someone.
+ */
+export function Overview({ onNavigate }: { onNavigate: (v: View) => void }) {
+  const { t } = useI18n();
+  const employees = useDomain('employees');
+  const recruitment = useDomain('recruitment');
+  const jobs = useDomain('jobs');
+  const kpis = useDomain('kpis');
+
+  const emp = useMemo(
+    () => (employees.dataset ? employeeAnalytics(employees.dataset) : null),
+    [employees.dataset],
   );
-}
+  const rec = useMemo(
+    () => (recruitment.dataset ? recruitmentAnalytics(recruitment.dataset) : null),
+    [recruitment.dataset],
+  );
+  const job = useMemo(
+    () => (jobs.dataset ? jobAnalytics(jobs.dataset) : null),
+    [jobs.dataset],
+  );
+  const kpi = useMemo(
+    () => (kpis.dataset ? kpiAnalytics(kpis.dataset) : null),
+    [kpis.dataset],
+  );
 
-export function Overview({ a }: { a: Analytics }) {
-  const { t, lang } = useI18n();
+  // Show the page as soon as anything has landed; the rest fills in.
+  if (!emp && !rec && !job && !kpi) return <LoadingView text={t('state.loading')} />;
 
-  const toSegs = (slices: { key: string; value: number }[], dict: Record<string, { ar: string; en: string; color: string }>): Segment[] =>
-    slices.map((s) => ({ label: dict[s.key][lang], value: s.value, color: dict[s.key].color }));
+  const attention = [
+    rec && {
+      icon: CalendarClock, label: t('kpi.overdue'), count: rec.overdue,
+      tone: '#F43F5E', view: 'recruitment' as View,
+    },
+    emp && {
+      icon: TimerReset, label: t('ov.probation'), count: emp.underProbation.length,
+      tone: '#F59E0B', view: 'employees' as View,
+    },
+    emp && {
+      icon: FileWarning, label: t('emp.docs.missing'), count: emp.docCompletion.missing,
+      tone: '#F43F5E', view: 'employees' as View,
+    },
+    job && {
+      icon: Network, label: t('job.under'), count: job.under,
+      tone: '#F43F5E', view: 'jobs' as View,
+    },
+    job && {
+      icon: Target, label: `${t('job.kpiCoverage')} — ${t('job.under')}`,
+      count: job.totalJobs - job.withKpis, tone: '#8B5CF6', view: 'jobs' as View,
+    },
+    kpi && {
+      icon: AlertTriangle, label: t('kpis.weightWarn'), count: kpi.weightIssues.length,
+      tone: '#F59E0B', view: 'kpis' as View,
+    },
+  ].filter((x): x is NonNullable<typeof x> => Boolean(x) && x!.count > 0);
 
-  const statusSegs = toSegs(a.byStatus, STATUS);
-  const prioritySegs = toSegs(a.byPriority, PRIORITY);
-  const senioritySegs = toSegs(a.bySeniority, SENIORITY);
-  const locationSegs = toSegs(a.byLocation, LOCATION);
-  const vacancySegs = toSegs(a.byVacancy, VACANCY);
-
-  const statusLegend: Segment[] = [
-    { label: STATUS.active[lang], value: 0, color: STATUS.active.color },
-    { label: STATUS.hold[lang], value: 0, color: STATUS.hold.color },
-    { label: STATUS.done[lang], value: 0, color: STATUS.done.color },
-  ];
-  const stackFrom = (rows: { name: string; active: number; hold: number; done: number; total: number }[]) =>
-    rows.map((d) => ({
-      name: d.name,
-      total: d.total,
-      segments: [
-        { label: STATUS.active[lang], value: d.active, color: STATUS.active.color },
-        { label: STATUS.hold[lang], value: d.hold, color: STATUS.hold.color },
-        { label: STATUS.done[lang], value: d.done, color: STATUS.done.color },
-      ],
-    }));
-
-  const pipelineColors: Record<string, string> = {
-    reqReceived: '#4f93f7', published: '#2a7df0', candidateReceived: '#1366e6', accepted: '#10b981',
-  };
-  const pipeline: Segment[] = a.pipeline.map((p) => ({
-    label: t(`pipe.${p.key}` as 'pipe.accepted'), value: p.value, color: pipelineColors[p.key] || '#2a7df0',
-  }));
+  const yearSeries = emp
+    ? (() => {
+        const years = [...new Set([
+          ...emp.hiresByYear.map((s) => s.label),
+          ...emp.exitsByYear.map((s) => s.label),
+        ])].sort();
+        const hires = new Map(emp.hiresByYear.map((s) => [s.label, s.value]));
+        const exits = new Map(emp.exitsByYear.map((s) => [s.label, s.value]));
+        return years.map((y) => ({
+          name: y,
+          total: (hires.get(y) ?? 0) + (exits.get(y) ?? 0),
+          segments: [
+            { label: t('ov.newHires'), value: hires.get(y) ?? 0, color: '#10B981' },
+            { label: t('emp.inactive'), value: exits.get(y) ?? 0, color: '#F43F5E' },
+          ],
+        }));
+      })()
+    : [];
 
   return (
-    <div className="space-y-4">
-      {/* Primary KPIs */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <KpiCard hero icon={<Briefcase size={22} />} label={t('kpi.total')} hint={t('kpi.total.hint')} value={formatNumber(a.total)} delay={0} />
-        <KpiCard icon={<Target size={22} />} tone="#1366e6" label={t('kpi.needed')} hint={t('kpi.needed.hint')} value={formatNumber(a.needed)} delay={40} />
-        <KpiCard icon={<UserCheck size={22} />} tone="#10b981" label={t('kpi.accepted')} hint={t('kpi.accepted.hint')} value={formatNumber(a.accepted)} delay={80} />
-        <KpiCard icon={<TrendingUp size={22} />} tone="#8b5cf6" label={t('kpi.fillRate')} hint={t('kpi.fillRate.hint')} value={a.fillRate == null ? '—' : formatPercent(a.fillRate)} delay={120} />
+    <div className="space-y-5 pb-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <KpiCard
+          hero
+          icon={<Users size={20} />}
+          label={t('ov.headcount')}
+          hint={t('ov.headcount.hint')}
+          value={emp ? formatNumber(emp.active) : '—'}
+          onClick={() => onNavigate('employees')}
+        />
+        <KpiCard
+          icon={<Briefcase size={20} />}
+          label={t('ov.openRoles')}
+          hint={t('ov.openRoles.hint')}
+          value={rec ? formatNumber(rec.active) : '—'}
+          tone="#0F72D8"
+          delay={60}
+          onClick={() => onNavigate('recruitment')}
+        />
+        <KpiCard
+          icon={<TrendingDown size={20} />}
+          label={t('ov.turnover')}
+          hint={t('ov.turnover.hint')}
+          value={emp?.turnover == null ? '—' : formatPercent(emp.turnover)}
+          tone="#F43F5E"
+          delay={120}
+          onClick={() => onNavigate('employees')}
+        />
+        <KpiCard
+          icon={<Network size={20} />}
+          label={t('ov.coverage')}
+          hint={t('ov.coverage.hint')}
+          value={job ? formatPercent(job.coverage) : '—'}
+          tone="#2AA7F0"
+          delay={180}
+          onClick={() => onNavigate('jobs')}
+        />
       </div>
 
-      {/* Secondary stats */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatPill icon={<Activity size={20} />} color={STATUS.active.color} label={t('kpi.active')} value={formatNumber(a.active)} />
-        <StatPill icon={<PauseCircle size={20} />} color={STATUS.hold.color} label={t('kpi.hold')} value={formatNumber(a.hold)} />
-        <StatPill icon={<CheckCircle2 size={20} />} color={STATUS.done.color} label={t('kpi.done')} value={formatNumber(a.done)} />
-        <StatPill icon={<AlertTriangle size={20} />} color="#f43f5e" label={t('kpi.overdue')} value={formatNumber(a.overdue)} />
+      <div className="grid grid-cols-3 gap-3 sm:gap-4">
+        <KpiCard
+          icon={<Users size={18} />}
+          label={t('ov.newHires')}
+          value={emp ? formatNumber(emp.newThisYear) : '—'}
+          tone="#10B981"
+        />
+        <KpiCard
+          icon={<TimerReset size={18} />}
+          label={t('emp.avgTenure')}
+          value={emp?.avgTenureYears == null
+            ? '—'
+            : `${formatDecimal(emp.avgTenureYears)} ${t('emp.years')}`}
+          tone="#0F72D8"
+        />
+        <KpiCard
+          icon={<Target size={18} />}
+          label={t('kpis.count')}
+          value={kpi ? formatNumber(kpi.total) : '—'}
+          tone="#8B5CF6"
+          onClick={() => onNavigate('kpis')}
+        />
       </div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-        <ChartCard className="lg:col-span-4" title={t('chart.status')} subtitle={t('chart.status.sub')} icon={<Layers size={17} />}>
-          <Donut data={statusSegs} centerValue={formatNumber(a.total)} centerLabel={t('unit.role')} />
+      {attention.length > 0 && (
+        <ChartCard
+          title={t('ov.attention')}
+          subtitle={t('ov.attention.sub')}
+          icon={<AlertTriangle size={17} />}
+        >
+          <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {attention.map((item) => (
+              <li key={item.label}>
+                <button
+                  type="button"
+                  onClick={() => onNavigate(item.view)}
+                  className="focus-ring flex min-h-[56px] w-full items-center gap-3 rounded-xl border
+                             border-slate-100 bg-surface-muted/50 px-3 text-start transition
+                             hover:border-slate-200 hover:bg-white"
+                >
+                  <span
+                    className="grid h-9 w-9 shrink-0 place-items-center rounded-lg"
+                    style={{ backgroundColor: `${item.tone}1a`, color: item.tone }}
+                  >
+                    <item.icon size={17} />
+                  </span>
+                  <span className="min-w-0 flex-1 text-[13px] font-semibold text-ink-700">
+                    {item.label}
+                  </span>
+                  <span
+                    className="shrink-0 text-[17px] font-extrabold tnum"
+                    style={{ color: item.tone }}
+                  >
+                    {item.count}
+                  </span>
+                  <ArrowRight size={14} className="shrink-0 text-ink-400 rtl:rotate-180" />
+                </button>
+              </li>
+            ))}
+          </ul>
         </ChartCard>
+      )}
 
-        {a.flags.priority && (
-          <ChartCard className="lg:col-span-4" title={t('chart.priority')} subtitle={t('chart.priority.sub')} icon={<Target size={17} />}>
-            <Donut data={prioritySegs} centerValue={formatNumber(a.total)} centerLabel={t('unit.role')} />
+      <div className="grid gap-4 lg:grid-cols-2">
+        {emp && (
+          <ChartCard title={t('ov.headcountTrend')} subtitle={t('ov.headcountTrend.sub')}>
+            <StackedBarList
+              legend={[
+                { label: t('ov.newHires'), value: 0, color: '#10B981' },
+                { label: t('emp.inactive'), value: 0, color: '#F43F5E' },
+              ]}
+              items={yearSeries}
+            />
           </ChartCard>
         )}
 
-        {a.flags.seniority && (
-          <ChartCard className="lg:col-span-4" title={t('chart.seniority')} subtitle={t('chart.seniority.sub')} icon={<Users size={17} />}>
-            <Donut data={senioritySegs} centerValue={formatNumber(a.total)} centerLabel={t('unit.role')} />
+        {rec && (
+          <ChartCard title={t('chart.status')} subtitle={t('chart.status.sub')}>
+            <Donut
+              centerValue={formatNumber(rec.total)}
+              centerLabel={t('unit.role')}
+              data={rec.byStatus.map((s) => ({
+                label: t(`kpi.${s.key}` as 'kpi.active'),
+                value: s.value,
+                color: STATUS[s.key].color,
+              }))}
+            />
           </ChartCard>
         )}
 
-        {a.flags.department && (
-          <ChartCard className="lg:col-span-6" title={t('chart.department')} subtitle={t('chart.department.sub')} icon={<Layers size={17} />}>
-            <StackedBarList items={stackFrom(a.byDepartment)} legend={statusLegend} />
+        {emp && (
+          <ChartCard title={t('emp.byDept')} subtitle={t('ov.headcount.hint')}>
+            <BarList
+              items={emp.byDepartment.slice(0, 10).map((d) => ({
+                name: d.name, value: d.active, color: d.color,
+              }))}
+            />
           </ChartCard>
         )}
 
-        {a.flags.recruiter && (
-          <ChartCard className="lg:col-span-6" title={t('chart.recruiter')} subtitle={t('chart.recruiter.sub')} icon={<Users size={17} />}>
-            <StackedBarList items={stackFrom(a.byRecruiter)} legend={statusLegend} />
+        {job && (
+          <ChartCard title={t('job.byDept')} subtitle={t('job.sub')}>
+            <BarList
+              items={job.byDepartment.slice(0, 10).map((d) => ({
+                name: d.name, value: d.forecast, color: deptColor(d.name),
+              }))}
+            />
           </ChartCard>
         )}
 
-        {a.flags.pipeline && (
-          <ChartCard className="lg:col-span-5" title={t('chart.pipeline')} subtitle={t('chart.pipeline.sub')} icon={<GitBranch size={17} />}>
-            <Funnel stages={pipeline} />
-          </ChartCard>
-        )}
-
-        {a.flags.location && (
-          <ChartCard className="lg:col-span-3" title={t('chart.location')} subtitle={t('chart.location.sub')} icon={<MapPin size={17} />}>
-            <Donut data={locationSegs} size={140} thickness={20} centerValue={formatNumber(a.total)} />
-          </ChartCard>
-        )}
-
-        {a.flags.vacancy && (
-          <ChartCard className="lg:col-span-4" title={t('chart.vacancy')} subtitle={t('chart.vacancy.sub')} icon={<Repeat size={17} />}>
-            <Donut data={vacancySegs} size={140} thickness={20} centerValue={formatNumber(vacancySegs.reduce((s, x) => s + x.value, 0))} />
-          </ChartCard>
-        )}
-
-        {a.flags.interviewer && (
-          <ChartCard className="lg:col-span-6" title={t('chart.interviewer')} subtitle={t('chart.interviewer.sub')} icon={<Users size={17} />}>
-            <BarList items={a.byInterviewer.slice(0, 8)} accent="#1366e6" />
-          </ChartCard>
-        )}
-
-        {a.flags.salary && (
-          <ChartCard className="lg:col-span-6" title={t('chart.comp')} subtitle={t('chart.comp.sub')} icon={<Wallet size={17} />}>
-            <div className="mb-4 flex flex-wrap gap-3">
-              <div className="rounded-xl bg-brand-50 px-4 py-2.5">
-                <div className="text-[11px] font-semibold text-brand-700">{t('stat.median')}</div>
-                <div className="text-lg font-extrabold text-ink-900 tnum">
-                  {formatMoney(a.comp.median)} <span className="text-[11px] font-medium text-ink-400">{t('unit.egpMo')}</span>
-                </div>
-              </div>
-              <div className="rounded-xl bg-surface-muted px-4 py-2.5">
-                <div className="text-[11px] font-semibold text-ink-500">{t('stat.avg')}</div>
-                <div className="text-lg font-extrabold text-ink-900 tnum">{formatMoney(a.comp.mean)}</div>
-              </div>
-              {a.planWindowAvg != null && (
-                <div className="rounded-xl bg-surface-muted px-4 py-2.5">
-                  <div className="text-[11px] font-semibold text-ink-500">{t('stat.planWindow')}</div>
-                  <div className="text-lg font-extrabold text-ink-900 tnum">
-                    {Math.round(a.planWindowAvg)} <span className="text-[11px] font-medium text-ink-400">{t('unit.days')}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-            <BarList items={a.comp.byDept.map((d) => ({ name: d.name, value: d.median, color: d.color }))} format={(v) => formatMoney(v)} />
-            <p className="mt-3 text-[11px] leading-relaxed text-ink-400">{t('comp.caveat')} · {t('comp.based', { n: a.comp.count })}</p>
+        {rec?.flags.department && (
+          <ChartCard
+            title={t('chart.department')}
+            subtitle={t('chart.department.sub')}
+            className="lg:col-span-2"
+          >
+            <StackedBarList
+              legend={[
+                { label: t('kpi.active'), value: 0, color: STATUS.active.color },
+                { label: t('kpi.hold'), value: 0, color: STATUS.hold.color },
+                { label: t('kpi.done'), value: 0, color: STATUS.done.color },
+              ]}
+              items={rec.byDepartment.map((d) => ({
+                name: d.name,
+                total: d.total,
+                segments: [
+                  { label: 'active', value: d.active, color: STATUS.active.color },
+                  { label: 'hold', value: d.hold, color: STATUS.hold.color },
+                  { label: 'done', value: d.done, color: STATUS.done.color },
+                ],
+              }))}
+            />
           </ChartCard>
         )}
       </div>

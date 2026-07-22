@@ -12,7 +12,7 @@ export interface CellValue {
   type: CellType;
 }
 
-/** One row of the sheet, keyed by the ORIGINAL (trimmed) header label. */
+/** One row of a tab, keyed by the ORIGINAL (trimmed) header label. */
 export interface SheetRow {
   index: number;
   cells: Record<string, CellValue>;
@@ -20,44 +20,63 @@ export interface SheetRow {
 
 export interface SheetTable {
   sheet: string; // gviz tab name
-  title: string; // row-1 report title (live from the sheet)
-  headers: string[]; // trimmed row-2 labels, in order
+  headers: string[]; // trimmed header labels, in order
   rows: SheetRow[];
   fetchedAt: number;
 }
 
-export interface TabInfo {
-  sheet: string; // exact gviz tab name
-  labelAr: string;
-  labelEn: string;
+// ── Domains ───────────────────────────────────────────────────
+
+export type DomainId =
+  | 'recruitment'
+  | 'employees'
+  | 'salaries'
+  | 'jobs'
+  | 'kpis'
+  | 'appraisals'
+  | 'criteria'
+  | 'plans'
+  | 'training'
+  | 'payroll';
+
+export interface DomainSpec {
+  id: DomainId;
+  tab: string;
+  ar: string;
+  en: string;
+  /** Stable row identity the write API targets. Never renumber it in the sheet. */
+  keyColumn: string;
+  editable: boolean;
+  /** Requires the passcode gate before any data is fetched. */
+  restricted?: boolean;
 }
 
-export type CanonicalKey =
-  | 'no'
-  | 'position'
-  | 'needed'
-  | 'accepted'
-  | 'feedback'
-  | 'department'
-  | 'vacancyReason'
-  | 'status'
-  | 'reqReceived'
-  | 'published'
-  | 'candidateReceived'
-  | 'priority'
-  | 'seniority'
-  | 'location'
-  | 'recruiter1'
-  | 'recruiter2'
-  | 'activeDate'
-  | 'dueDate'
-  | 'hireDate'
-  | 'salaryRange'
-  | 'actualSalary'
-  | 'hrValidation'
-  | 'action'
-  | 'interviewer'
-  | 'validation';
+/** A tab that has been loaded and had its headers resolved. */
+export interface Dataset {
+  spec: DomainSpec;
+  table: SheetTable;
+  rows: SheetRow[];
+  /** Present headers, so a page can ask "does this column exist?" */
+  headers: string[];
+}
 
-/** canonical key -> index into headers/row cells (only present columns) */
-export type ColumnMap = Partial<Record<CanonicalKey, number>>;
+// ── Write API ─────────────────────────────────────────────────
+
+export interface WritePatch {
+  [column: string]: string | number;
+}
+
+export interface WriteResult {
+  ok: boolean;
+  error?: string;
+}
+
+/** A local, not-yet-confirmed edit layered over the fetched rows. */
+export interface PendingEdit {
+  domain: DomainId;
+  key: string;
+  patch: WritePatch;
+  at: number;
+  state: 'saving' | 'saved' | 'failed';
+  error?: string;
+}

@@ -29,6 +29,13 @@ const TYPES = {
 const server = http.createServer(async (req, res) => {
   try {
     let urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
+
+    // Railway's health check.
+    if (urlPath === '/healthz') {
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      return res.end('ok');
+    }
+
     if (urlPath.endsWith('/')) urlPath += 'index.html';
     // Strip any leading "../" to prevent path traversal.
     const safe = normalize(urlPath).replace(/^(\.\.(\/|\\|$))+/, '');
@@ -38,7 +45,14 @@ const server = http.createServer(async (req, res) => {
     try {
       data = await readFile(filePath);
     } catch {
-      // SPA-style fallback to index.html.
+      // A missing file that looks like an asset must 404. Falling back to
+      // index.html would return HTML under a .js content-type, and the browser
+      // would refuse it with a confusing MIME error instead of a plain 404.
+      if (extname(safe)) {
+        res.writeHead(404, { 'content-type': 'text/plain' });
+        return res.end('Not found');
+      }
+      // SPA-style fallback for route-like paths.
       filePath = join(DIST, 'index.html');
       data = await readFile(filePath);
     }

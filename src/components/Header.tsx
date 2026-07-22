@@ -1,144 +1,141 @@
 import { useEffect, useState } from 'react';
-import { ChevronDown, ExternalLink, Globe, Loader2, Menu, RefreshCw, Search } from 'lucide-react';
-import type { TabInfo } from '../types';
+import { ExternalLink, Globe, Loader2, Lock, Menu, RefreshCw } from 'lucide-react';
 import { useI18n } from '../i18n/LangProvider';
-import { SHEET_URL } from '../config/sheet';
+import { SHEET_URL } from '../config/domains';
+import { useData } from '../data/DataProvider';
+import { useSalaryGate } from '../auth/SalaryGate';
+import { Mark } from './Logo';
 
-interface Props {
-  pageTitle: string;
-  reportTitle?: string;
-  tabs: TabInfo[];
-  activeSheet: string;
-  onSelectTab: (s: string) => void;
-  query: string;
-  onQueryChange: (q: string) => void;
-  onRefresh: () => void;
-  refreshing: boolean;
-  lastSync: number | null;
-  onOpenNav: () => void;
-}
-
-function useRelativeTime(ts: number | null): number {
+function useRelativeTime(ts: number | null): string {
+  const { t } = useI18n();
   const [, tick] = useState(0);
+
   useEffect(() => {
+    if (!ts) return;
     const id = setInterval(() => tick((n) => n + 1), 15000);
     return () => clearInterval(id);
-  }, []);
-  return ts ?? 0;
+  }, [ts]);
+
+  if (!ts) return '';
+  const secs = Math.round((Date.now() - ts) / 1000);
+  if (secs < 20) return t('time.now');
+  if (secs < 60) return t('time.secAgo', { n: secs });
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return t('time.minAgo', { n: mins });
+  return t('time.hourAgo', { n: Math.round(mins / 60) });
 }
 
-export function Header(props: Props) {
+export function Header({
+  pageTitle,
+  subtitle,
+  lastSync,
+  refreshing,
+  onOpenNav,
+}: {
+  pageTitle: string;
+  subtitle?: string;
+  lastSync: number | null;
+  refreshing: boolean;
+  onOpenNav: () => void;
+}) {
   const { t, lang, toggle } = useI18n();
-  const {
-    pageTitle, reportTitle, tabs, activeSheet, onSelectTab,
-    query, onQueryChange, onRefresh, refreshing, lastSync, onOpenNav,
-  } = props;
-
-  useRelativeTime(lastSync);
-
-  const rel = (() => {
-    if (!lastSync) return '';
-    const s = Math.round((Date.now() - lastSync) / 1000);
-    if (s < 10) return t('time.now');
-    if (s < 60) return t('time.secAgo', { n: s });
-    const m = Math.round(s / 60);
-    if (m < 60) return t('time.minAgo', { n: m });
-    return t('time.hourAgo', { n: Math.round(m / 60) });
-  })();
-
-  const SearchBox = (
-    <div className="relative">
-      <Search size={16} className="pointer-events-none absolute inset-y-0 my-auto h-4 w-4 text-ink-400" style={{ insetInlineStart: 12 }} />
-      <input
-        value={query}
-        onChange={(e) => onQueryChange(e.target.value)}
-        placeholder={t('header.searchPlaceholder')}
-        className="focus-ring w-full rounded-xl border border-slate-200 bg-surface-muted py-2.5 ps-9 pe-3 text-sm text-ink-900 placeholder:text-ink-400 focus:bg-white"
-      />
-    </div>
-  );
+  const { refresh, writable } = useData();
+  const { unlocked, lock } = useSalaryGate();
+  const synced = useRelativeTime(lastSync);
 
   return (
-    <header className="sticky top-0 z-20 border-b border-slate-200/70 bg-white/85 backdrop-blur-md">
-      <div className="flex h-16 items-center gap-3 px-4 lg:px-7">
+    <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-surface-card/85 backdrop-blur-md">
+      <div className="mx-auto flex w-full max-w-[1480px] items-center gap-2 px-3 py-2.5 sm:gap-3 lg:px-7 lg:py-3">
         <button
+          type="button"
           onClick={onOpenNav}
-          className="focus-ring grid h-10 w-10 shrink-0 place-items-center rounded-xl text-ink-700 hover:bg-surface-muted lg:hidden"
-          aria-label="Open menu"
+          aria-label={t('header.menu')}
+          className="focus-ring grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-slate-200
+                     text-ink-700 hover:bg-surface-muted lg:hidden"
         >
-          <Menu size={20} />
+          <Menu size={19} />
         </button>
 
-        <div className="min-w-0 shrink">
-          <h1 className="truncate text-[15px] font-bold text-ink-900 lg:text-[17px]">{pageTitle}</h1>
-          <p className="truncate text-[11.5px] text-ink-400">{reportTitle || t('app.subtitle')}</p>
+        <span className="lg:hidden">
+          <Mark size={30} />
+        </span>
+
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-[15px] font-bold text-ink-900 sm:text-[17px]">{pageTitle}</h1>
+          <p className="hidden truncate text-[12px] text-ink-400 sm:block">
+            {subtitle || t('ov.sub')}
+          </p>
         </div>
 
-        <div className="ms-auto flex items-center gap-2">
-          <div className="hidden w-64 xl:block">{SearchBox}</div>
+        {/* Live badge — desktop only; the phone gets the refresh button alone */}
+        <span
+          className={`hidden items-center gap-1.5 rounded-full px-2.5 py-1 text-[11.5px] font-semibold
+                      md:inline-flex ${
+                        refreshing
+                          ? 'bg-brand-50 text-brand-700'
+                          : 'bg-emerald-50 text-emerald-700'
+                      }`}
+        >
+          {refreshing ? (
+            <Loader2 size={11} className="animate-spin" />
+          ) : (
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse-ring" />
+          )}
+          {refreshing ? t('header.syncing') : t('header.live')}
+          {!refreshing && synced && <span className="text-emerald-600/70 tnum">· {synced}</span>}
+        </span>
 
-          {/* Report / month selector */}
-          <div className="relative hidden sm:block">
-            <select
-              value={activeSheet}
-              onChange={(e) => onSelectTab(e.target.value)}
-              className="focus-ring cursor-pointer appearance-none rounded-xl border border-slate-200 bg-white py-2.5 ps-3.5 pe-9 text-sm font-semibold text-ink-800 hover:border-brand-300"
-              aria-label={t('header.report')}
-            >
-              {tabs.map((tab) => (
-                <option key={tab.sheet} value={tab.sheet}>
-                  {lang === 'ar' ? tab.labelAr : tab.labelEn}
-                </option>
-              ))}
-            </select>
-            <ChevronDown size={15} className="pointer-events-none absolute inset-y-0 my-auto h-4 w-4 text-ink-400" style={{ insetInlineEnd: 10 }} />
-          </div>
+        {!writable && (
+          <span className="hidden rounded-full bg-slate-100 px-2.5 py-1 text-[11.5px] font-semibold
+                           text-ink-500 lg:inline-flex">
+            {t('header.readonly')}
+          </span>
+        )}
 
-          {/* Live / refresh */}
+        {unlocked && (
           <button
-            onClick={onRefresh}
-            title={t('header.updated')}
-            className="focus-ring flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[12.5px] font-semibold text-ink-700 hover:border-brand-300 hover:text-brand-700"
+            type="button"
+            onClick={lock}
+            title={t('sal.lock')}
+            className="focus-ring hidden h-10 w-10 place-items-center rounded-xl border border-emerald-200
+                       bg-emerald-50 text-emerald-600 hover:bg-emerald-100 sm:grid"
           >
-            {refreshing ? (
-              <Loader2 size={14} className="animate-spin text-brand-600" />
-            ) : (
-              <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-              </span>
-            )}
-            <span className="hidden md:inline">
-              {refreshing ? t('header.syncing') : `${t('header.live')} · ${rel}`}
-            </span>
-            <RefreshCw size={13} className="text-ink-400 md:hidden" />
+            <Lock size={16} />
           </button>
+        )}
 
-          {/* Language */}
-          <button
-            onClick={toggle}
-            className="focus-ring flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[12.5px] font-bold text-ink-700 hover:border-brand-300 hover:text-brand-700"
-            aria-label="Toggle language"
-          >
-            <Globe size={15} />
-            <span>{t('header.language')}</span>
-          </button>
+        <button
+          type="button"
+          onClick={() => refresh()}
+          aria-label={t('header.refresh')}
+          className="focus-ring grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-slate-200
+                     text-ink-700 hover:bg-surface-muted"
+        >
+          <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
+        </button>
 
-          {/* Open sheet */}
-          <a
-            href={SHEET_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            title={t('header.openSheet')}
-            className="focus-ring hidden h-[42px] w-[42px] place-items-center rounded-xl bg-brand-600 text-white hover:bg-brand-700 sm:grid"
-          >
-            <ExternalLink size={16} />
-          </a>
-        </div>
+        <button
+          type="button"
+          onClick={toggle}
+          aria-label={t('header.language')}
+          className="focus-ring flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-slate-200
+                     px-2.5 text-[12.5px] font-bold text-ink-700 hover:bg-surface-muted"
+        >
+          <Globe size={15} />
+          {lang === 'ar' ? 'EN' : 'ع'}
+        </button>
+
+        <a
+          href={SHEET_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={t('header.openSheet')}
+          className="focus-ring hidden h-10 w-10 place-items-center rounded-xl border border-slate-200
+                     text-ink-700 hover:bg-surface-muted lg:grid"
+        >
+          <ExternalLink size={16} />
+        </a>
       </div>
-
-      {/* Mobile search */}
-      <div className="px-4 pb-3 xl:hidden">{SearchBox}</div>
     </header>
   );
 }

@@ -6,6 +6,11 @@ dist-ssr
 .env
 .env.*.local
 
+# Generated HR data — NEVER commit.
+# Employees.csv carries national IDs, addresses and phone numbers; Salaries.csv
+# carries payroll. Regenerate them locally with tools/extract_to_csv.py.
+data/csv/*.csv
+
 # Editor / OS
 .vscode/*
 !.vscode/extensions.json

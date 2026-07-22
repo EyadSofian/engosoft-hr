@@ -3,7 +3,10 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Engosoft HR — live recruitment dashboard synced to Google Sheets (Arabic / English).",
+  "description": "Engosoft HR Suite — live HR dashboard that reads from and writes back to Google Sheets (Arabic / English).",
+  "engines": {
+    "node": ">=20.11"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

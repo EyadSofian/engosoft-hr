@@ -3,19 +3,22 @@ import { parseGvizDate } from './format';
 
 const GVIZ_BASE = 'https://docs.google.com/spreadsheets/d';
 
-function gvizUrl(sheetId: string, sheetName: string, range: string, csv = false): string {
+// Widest tab is Employees at 76 columns; CZ leaves room to grow.
+const RANGE = 'A1:CZ5000';
+
+function gvizUrl(sheetId: string, sheetName: string): string {
   const params = new URLSearchParams({
-    tqx: `out:${csv ? 'csv' : 'json'}`,
+    tqx: 'out:json',
     sheet: sheetName,
-    range,
+    range: RANGE,
     headers: '1',
     _: String(Date.now()), // cache-buster so polling gets fresh data
   });
   return `${GVIZ_BASE}/${sheetId}/gviz/tq?${params.toString()}`;
 }
 
-interface GvizCol { id: string; label?: string; type?: string; }
-interface GvizCell { v: unknown; f?: string } // may be null
+interface GvizCol { id: string; label?: string; type?: string }
+interface GvizCell { v: unknown; f?: string }
 interface GvizTable { cols: GvizCol[]; rows: { c: (GvizCell | null)[] }[] }
 interface GvizResponse { status: string; errors?: { detailed_message?: string }[]; table: GvizTable }
 
@@ -39,7 +42,6 @@ function toCellValue(cell: GvizCell | null, colType?: string): CellValue {
     if (date) return { raw, text: f ?? '', num: null, date, type: 'date' };
   }
 
-  // Number
   if (typeof raw === 'number') {
     return { raw, text: f ?? String(raw), num: raw, date: null, type: 'number' };
   }
@@ -47,15 +49,20 @@ function toCellValue(cell: GvizCell | null, colType?: string): CellValue {
     return { raw, text: f ?? String(raw), num: null, date: null, type: 'string' };
   }
 
-  // String — keep a numeric view when the string is a clean number
+  // String — keep a numeric view when the string is a clean number, and parse
+  // an ISO date so a text-formatted date column still sorts and filters.
   const text = (f ?? String(raw)).trim();
   const cleaned = text.replace(/,/g, '');
   const num = cleaned !== '' && /^-?\d+(\.\d+)?$/.test(cleaned) ? Number(cleaned) : null;
+  if (num === null && /^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    const d = new Date(`${text}T00:00:00`);
+    if (!isNaN(d.getTime())) return { raw, text, num: null, date: d, type: 'date' };
+  }
   const type: CellType = text === '' ? 'empty' : 'string';
   return { raw, text, num, date: null, type };
 }
 
-async function fetchText(url: string, timeoutMs = 15000): Promise<string> {
+async function fetchText(url: string, timeoutMs = 20000): Promise<string> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -72,28 +79,17 @@ async function fetchText(url: string, timeoutMs = 15000): Promise<string> {
   }
 }
 
-/** Best-effort read of the row-1 report title (kept separate from the header row). */
-async function fetchTitle(sheetId: string, sheetName: string): Promise<string> {
-  try {
-    const text = await fetchText(gvizUrl(sheetId, sheetName, 'A1:A1', true));
-    // CSV of a single cell, possibly quoted.
-    return text.trim().replace(/^"|"$/g, '').replace(/""/g, '"').trim();
-  } catch {
-    return '';
-  }
-}
-
-/** Load one tab as a normalized SheetTable (headers from row 2, data from row 3+). */
+/** Load one tab as a normalized SheetTable (headers from row 1, data from row 2+). */
 export async function loadSheetTable(sheetId: string, sheetName: string): Promise<SheetTable> {
-  const [dataText, title] = await Promise.all([
-    fetchText(gvizUrl(sheetId, sheetName, 'A2:AZ2000')),
-    fetchTitle(sheetId, sheetName),
-  ]);
-
-  const resp = unwrap(dataText);
+  const resp = unwrap(await fetchText(gvizUrl(sheetId, sheetName)));
   if (resp.status === 'error') {
     const msg = resp.errors?.[0]?.detailed_message || 'Unknown error';
-    throw new Error(`Google Sheets: ${msg}`);
+    // The most common cause by far is a tab name that does not exist.
+    throw new Error(
+      /invalid.*sheet|unable to parse/i.test(msg)
+        ? `No tab named "${sheetName}" in the spreadsheet.`
+        : `Google Sheets: ${msg}`,
+    );
   }
 
   const cols = resp.table.cols || [];
@@ -118,5 +114,5 @@ export async function loadSheetTable(sheetId: string, sheetName: string): Promis
     if (hasAny) rows.push({ index: ri, cells });
   });
 
-  return { sheet: sheetName, title, headers, rows, fetchedAt: Date.now() };
+  return { sheet: sheetName, headers, rows, fetchedAt: Date.now() };
 }

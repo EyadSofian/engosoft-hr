@@ -1,111 +1,88 @@
-import {
-  CalendarDays, GitBranch, Info, LayoutDashboard, Table2, Users, X,
-} from 'lucide-react';
-import type { TabInfo } from '../types';
-import { NAV, type View } from '../nav';
-import { useI18n } from '../i18n/LangProvider';
+import { ExternalLink, Lock, X } from 'lucide-react';
 import { Logo } from './Logo';
+import { NavIcon } from './NavIcon';
+import { useI18n } from '../i18n/LangProvider';
+import { NAV_SECTIONS, type View } from '../nav';
+import { SHEET_URL } from '../config/domains';
+import { useSalaryGate } from '../auth/SalaryGate';
 
-const ICONS: Record<View, typeof LayoutDashboard> = {
-  overview: LayoutDashboard,
-  positions: Table2,
-  recruiters: Users,
-  pipeline: GitBranch,
-  about: Info,
-};
-
-interface Props {
+export function Sidebar({
+  active,
+  onNavigate,
+  onClose,
+}: {
   active: View;
   onNavigate: (v: View) => void;
-  tabs: TabInfo[];
-  activeSheet: string;
-  onSelectTab: (s: string) => void;
   onClose?: () => void;
-}
-
-export function Sidebar({ active, onNavigate, tabs, activeSheet, onSelectTab, onClose }: Props) {
-  const { t, lang } = useI18n();
+}) {
+  const { t } = useI18n();
+  const { unlocked } = useSalaryGate();
 
   return (
-    <aside className="flex h-full w-full flex-col bg-navy-gradient text-white">
-      <div className="flex items-center justify-between px-5 pb-5 pt-6">
-        <Logo />
+    <nav className="flex h-full flex-col bg-navy-gradient" aria-label={t('header.menu')}>
+      <div className="flex items-center gap-2 px-4 pb-4 pt-5">
+        <Logo size={38} tone="dark" subtitle={t('app.suite')} />
         {onClose && (
           <button
+            type="button"
             onClick={onClose}
-            className="focus-ring grid h-9 w-9 place-items-center rounded-lg text-white/70 hover:bg-white/10 lg:hidden"
-            aria-label="Close menu"
+            aria-label="Close"
+            className="focus-ring ms-auto grid h-9 w-9 place-items-center rounded-lg text-white/60
+                       hover:bg-white/10 hover:text-white lg:hidden"
           >
-            <X size={18} />
+            <X size={19} />
           </button>
         )}
       </div>
 
-      <nav className="px-3">
-        <p className="px-3 pb-2 text-[10.5px] font-bold uppercase tracking-wider text-white/35">
-          {t('nav.section.main')}
-        </p>
-        <div className="space-y-1">
-          {NAV.map(({ view, labelKey }) => {
-            const Icon = ICONS[view];
-            const isActive = active === view;
-            return (
-              <button
-                key={view}
-                onClick={() => {
-                  onNavigate(view);
-                  onClose?.();
-                }}
-                className={`nav-item w-full ${isActive ? 'nav-item-active' : ''}`}
-                aria-current={isActive ? 'page' : undefined}
-              >
-                <Icon size={18} strokeWidth={2.1} />
-                <span>{t(labelKey)}</span>
-                {isActive && <span className="ms-auto h-1.5 w-1.5 rounded-full bg-brand-300" />}
-              </button>
-            );
-          })}
-        </div>
-      </nav>
-
-      <div className="mt-7 px-3">
-        <p className="px-3 pb-2 text-[10.5px] font-bold uppercase tracking-wider text-white/35">
-          {t('nav.section.data')}
-        </p>
-        <div className="space-y-1">
-          {tabs.map((tab) => {
-            const isActive = tab.sheet === activeSheet;
-            return (
-              <button
-                key={tab.sheet}
-                onClick={() => {
-                  onSelectTab(tab.sheet);
-                  onClose?.();
-                }}
-                className={`flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2 text-[13px] transition-all ${
-                  isActive ? 'bg-white/12 font-semibold text-white' : 'text-white/55 hover:bg-white/8 hover:text-white/80'
-                }`}
-              >
-                <CalendarDays size={15} strokeWidth={2.1} />
-                <span className="truncate">{lang === 'ar' ? tab.labelAr : tab.labelEn}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="mt-auto p-4">
-        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-          <div className="flex items-center gap-2 text-[12.5px] font-semibold text-white/90">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
-            </span>
-            {t('about.live')}
+      <div className="flex-1 overflow-y-auto px-3 pb-4">
+        {NAV_SECTIONS.map((section) => (
+          <div key={section.titleKey} className="mb-5">
+            <p className="mb-1.5 px-3.5 text-[10px] font-bold uppercase tracking-[0.16em] text-white/35">
+              {t(section.titleKey)}
+            </p>
+            <ul className="space-y-0.5">
+              {section.items.map((item) => (
+                <li key={item.view}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onNavigate(item.view);
+                      onClose?.();
+                    }}
+                    aria-current={active === item.view ? 'page' : undefined}
+                    className={`nav-item min-h-[44px] w-full ${
+                      active === item.view ? 'nav-item-active' : ''
+                    }`}
+                  >
+                    <NavIcon name={item.icon} />
+                    <span className="flex-1 text-start">{t(item.labelKey)}</span>
+                    {item.locked && (
+                      <Lock
+                        size={13}
+                        className={unlocked ? 'text-emerald-300/70' : 'text-white/40'}
+                        aria-hidden="true"
+                      />
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
           </div>
-          <p className="mt-1 text-[11px] leading-relaxed text-white/50">{t('app.subtitle')}</p>
-        </div>
+        ))}
       </div>
-    </aside>
+
+      <div className="border-t border-white/10 p-3">
+        <a
+          href={SHEET_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="nav-item min-h-[44px] w-full"
+        >
+          <ExternalLink size={17} />
+          <span className="flex-1 text-start">{t('header.openSheet')}</span>
+        </a>
+      </div>
+    </nav>
   );
 }
