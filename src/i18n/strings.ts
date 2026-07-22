@@ -163,8 +163,8 @@ export const strings = {
   'sal.wrong': { ar: 'رمز غير صحيح', en: 'Incorrect passcode' },
   'sal.lock': { ar: 'قفل', en: 'Lock' },
   'sal.notConfigured': {
-    ar: 'لم يُضبط رمز الدخول. اضبط VITE_SALARY_PASS_HASH قبل النشر.',
-    en: 'No passcode is configured. Set VITE_SALARY_PASS_HASH before deploying.',
+    ar: 'المتغير VITE_SALARY_PASS_HASH لازم يكون بصمة SHA-256 (٦٤ حرفًا) مش الرمز نفسه. ولّدها بـ: python -c "import hashlib,sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest())" "الرمز"',
+    en: 'VITE_SALARY_PASS_HASH must be a 64-character SHA-256 digest, not the passcode itself. Generate it with: python -c "import hashlib,sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest())" "PASSCODE"',
   },
   'sal.title': { ar: 'تحليل المرتبات', en: 'Payroll analysis' },
   'sal.period': { ar: 'الفترة', en: 'Period' },

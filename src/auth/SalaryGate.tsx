@@ -29,6 +29,13 @@ interface GateValue {
 const GateContext = createContext<GateValue | null>(null);
 const SESSION_KEY = 'engosoft.salary.unlocked';
 
+/**
+ * The env var must hold a SHA-256 digest, not the passcode. Pasting the
+ * passcode itself is the obvious mistake, and it would otherwise surface as
+ * "wrong passcode" forever — so check the shape and say so instead.
+ */
+const isDigest = (v: string) => /^[0-9a-f]{64}$/i.test(v.trim());
+
 async function sha256Hex(input: string): Promise<string> {
   const bytes = new TextEncoder().encode(input);
   const digest = await crypto.subtle.digest('SHA-256', bytes);
@@ -41,7 +48,7 @@ export function SalaryGateProvider({ children }: { children: ReactNode }) {
   );
 
   const unlock = useCallback(async (passcode: string) => {
-    if (!SALARY_PASS_HASH) return false;
+    if (!isDigest(SALARY_PASS_HASH)) return false;
     const hash = await sha256Hex(passcode);
     const ok = hash.toLowerCase() === SALARY_PASS_HASH.trim().toLowerCase();
     if (ok) {
@@ -57,7 +64,7 @@ export function SalaryGateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<GateValue>(
-    () => ({ unlocked, unlock, lock, configured: Boolean(SALARY_PASS_HASH) }),
+    () => ({ unlocked, unlock, lock, configured: isDigest(SALARY_PASS_HASH) }),
     [unlocked, unlock, lock],
   );
 
